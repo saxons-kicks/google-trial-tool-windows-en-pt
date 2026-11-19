@@ -1,47 +1,47 @@
 #!/usr/bin/env bash
-# auto-trial.sh — One-command Google AI Ultra trial activation
-# 博客：https://blog.caowo.de/
-# 发卡网：https://faka.cdkey.si/
+# auto-trial.sh — Ativação em um comando da avaliação gratuita Google AI Ultra
+# Blog: https://blog.caowo.de/
+# Loja de chaves: https://faka.cdkey.si/
 #
-# Usage:
-#   ./auto-trial.sh --list                        # show all available trials
-#   ./auto-trial.sh --product 20x --dur 12mo      # Ultra 20x, 12-month trial
-#   ./auto-trial.sh --product 5x --dur 6mo        # Ultra 5x, 6-month trial
-#   ./auto-trial.sh --product pro --dur 3mo        # Pro 5TB, 3-month trial
-#   ./auto-trial.sh --product pro12 --dur 12mo     # Pro 5TB variant, 12-month trial
-#   ./auto-trial.sh --product 20x                  # Ultra 20x, longest available
-#   ./auto-trial.sh --port 16416 --list            # specify MuMu ADB port
+# Uso:
+#   ./auto-trial.sh --list                        # exibe todas as avaliações disponíveis
+#   ./auto-trial.sh --product 20x --dur 12mo      # Ultra 20x, avaliação de 12 meses
+#   ./auto-trial.sh --product 5x --dur 6mo        # Ultra 5x, avaliação de 6 meses
+#   ./auto-trial.sh --product pro --dur 3mo        # Pro 5TB, avaliação de 3 meses
+#   ./auto-trial.sh --product pro12 --dur 12mo     # Variante Pro 5TB, avaliação de 12 meses
+#   ./auto-trial.sh --product 20x                  # Ultra 20x, maior duração disponível
+#   ./auto-trial.sh --port 16416 --list            # especifica a porta ADB do MuMu
 #
-# Products: pro = g1.play.2tb.ai ($19.99), pro12 = g1.2tb.ai.subs_variant ($19.99, up to 12mo trial),
-#           5x = g1.play.20tb ($99.99), 20x = g1.play.ai.pro ($199.99), auto = best match
-# Durations: 1mo, 3mo, 6mo, 12mo, longest (default)
+# Produtos: pro = g1.play.2tb.ai ($19.99), pro12 = g1.2tb.ai.subs_variant ($19.99, até 12 meses de avaliação),
+#           5x = g1.play.20tb ($99.99), 20x = g1.play.ai.pro ($199.99), auto = melhor correspondência
+# Durações: 1mo, 3mo, 6mo, 12mo, longest (padrão)
 #
-# Billing dialog is launched but NOT auto-confirmed — confirm manually (password required).
+# A janela de pagamento é aberta, mas NÃO confirmada automaticamente — confirme manualmente (senha necessária).
 #
-# Requirements: adb (MuMu bundled), frida CLI, frida-server on device, module.apk on device
+# Requisitos: adb (incluso no MuMu), frida CLI, frida-server no dispositivo, module.apk no dispositivo
 
 set -euo pipefail
 
-# ===== Paths =====
+# ===== Caminhos =====
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRIDA_SCRIPT="${FRIDA_SCRIPT:-$SCRIPT_DIR/frida-auto-trial.js}"
 FRIDA_DEVICE_PORT=27042
 FRIDA_LOCAL_PORT=27043
 GOOGLE_ONE_PKG="com.google.android.apps.subscriptions.red"
 
-# Device paths (override via env vars if your layout differs)
+# Caminhos no dispositivo (sobrescreva via variáveis de ambiente se a estrutura for diferente)
 MODULE_APK_DEVICE="${MODULE_APK_DEVICE:-/data/local/tmp/module.apk}"
 FRIDA_SERVER_PATH="${FRIDA_SERVER_PATH:-/data/local/tmp/frida-server}"
 
-# ===== Defaults =====
+# ===== Padrões =====
 MODE="activate"
 TARGET="auto"
 DURATION="longest"
 DEVICE_PORT=""
 
-# ===== Auto-detect ADB =====
+# ===== Detectar ADB automaticamente =====
 find_adb() {
-    # 1. Explicit env var
+    # 1. Variável de ambiente explícita
     if [[ -n "${ADB_PATH:-}" ]] && [[ -x "$ADB_PATH" ]]; then
         echo "$ADB_PATH"; return
     fi
@@ -49,18 +49,18 @@ find_adb() {
     if command -v adb >/dev/null 2>&1; then
         command -v adb; return
     fi
-    # 3. Known adb locations — test each directly
-    #    glob/find fail on C:/ translated paths; -x on full paths works
+    # 3. Locais conhecidos do adb — testa cada um diretamente
+    #    glob/find falham em caminhos traduzidos de C:/; -x em caminhos completos funciona
     local candidates=(
-        # MuMu — nested bundle (MuMuPlayer.app/Contents/MacOS/MuMuEmulator.app/…)
+        # MuMu — pacote aninhado (MuMuPlayer.app/Contents/MacOS/MuMuEmulator.app/…)
         "/Applications/MuMuPlayer.app/Contents/MacOS/MuMuEmulator.app/Contents/MacOS/tools/adb"
         "$HOME/Applications/MuMuPlayer.app/Contents/MacOS/MuMuEmulator.app/Contents/MacOS/tools/adb"
         "/Applications/MuMuPlayer.app/Contents/MacOS/MuMuEmulator.app/Contents/MacOS/tools/adb"
-        # MuMu — flat bundle (tools directly under MuMuPlayer.app)
+        # MuMu — pacote plano (tools diretamente sob MuMuPlayer.app)
         "/Applications/MuMuPlayer.app/Contents/MacOS/tools/adb"
         "$HOME/Applications/MuMuPlayer.app/Contents/MacOS/tools/adb"
         "/Applications/MuMuPlayer.app/Contents/MacOS/tools/adb"
-        # MuMu Pro / alternate names
+        # MuMu Pro / nomes alternativos
         "/Applications/MuMuPlayerPro.app/Contents/MacOS/MuMuEmulator.app/Contents/MacOS/tools/adb"
         "/Applications/MuMu Player.app/Contents/MacOS/MuMuEmulator.app/Contents/MacOS/tools/adb"
         "/Applications/MuMuPlayerPro.app/Contents/MacOS/tools/adb"
@@ -77,9 +77,9 @@ find_adb() {
     done
     return 1
 }
-ADB="$(find_adb)" || { echo "[-] adb not found. Install Android SDK or set ADB_PATH"; exit 1; }
+ADB="$(find_adb)" || { echo "[-] adb não encontrado. Instale o Android SDK ou defina ADB_PATH"; exit 1; }
 
-# ===== Parse args =====
+# ===== Analisar argumentos =====
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --list)        MODE="list"; shift ;;
@@ -91,106 +91,127 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
             exit 0 ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
+        *) echo "Opção desconhecida: $1"; exit 1 ;;
     esac
 done
 
-# ===== Resolve product aliases =====
+# ===== Resolver apelidos dos produtos =====
 case "$TARGET" in
     20x|20X|ultra20x) TARGET="g1.play.ai.pro" ;;
     5x|5X|ultra5x)    TARGET="g1.play.20tb" ;;
     pro|Pro|PRO)      TARGET="g1.play.2tb.ai" ;;
     pro12|Pro12|PRO12) TARGET="g1.2tb.ai.subs_variant" ;;
-    auto|g1.*)        ;; # keep as-is
-    *) echo "Unknown product: $TARGET (use pro, 5x, 20x, pro12, or a g1.* product ID)"; exit 1 ;;
+    auto|g1.*)        ;; # manter como está
+    *) echo "Produto desconhecido: $TARGET (use pro, 5x, 20x, pro12 ou um ID de produto g1.*)"; exit 1 ;;
 esac
 
-# ===== Helpers =====
+# ===== Auxiliares =====
 log()  { echo "[*] $*"; }
 ok()   { echo "[+] $*"; }
 err()  { echo "[-] $*" >&2; }
 die()  { err "$*"; exit 1; }
 
-# ===== 1. Find MuMu device =====
+# ===== 1. Encontrar dispositivo MuMu =====
 detect_device() {
     if [[ -n "$DEVICE_PORT" ]]; then
         DEVICE="127.0.0.1:$DEVICE_PORT"
-        log "Using specified device $DEVICE"
+        log "Usando dispositivo especificado $DEVICE"
         "$ADB" connect "$DEVICE" >/dev/null 2>&1 || true
         return
     fi
 
-    log "Scanning for MuMu devices..."
-    # MuMu ports: 16384, 16416, 16448, 16480, ...
+    log "Procurando dispositivos MuMu..."
+    # Portas do MuMu: 16384, 16416, 16448, 16480, ...
     for port in 16384 16416 16448 16480 16512; do
         if "$ADB" connect "127.0.0.1:$port" 2>/dev/null | grep -q "connected"; then
             DEVICE="127.0.0.1:$port"
-            ok "Found device at $DEVICE"
+            ok "Dispositivo encontrado em $DEVICE"
             return
         fi
     done
 
-    # Fallback: check already-connected devices
+    # Alternativa: verificar dispositivos já conectados
     local dev
     dev=$("$ADB" devices 2>/dev/null | grep -v "^List" | grep "device$" | head -1 | awk '{print $1}')
     if [[ -n "$dev" ]]; then
         DEVICE="$dev"
-        ok "Using connected device $DEVICE"
+        ok "Usando dispositivo conectado $DEVICE"
         return
     fi
 
-    die "No MuMu device found. Start the emulator or use --port <PORT>"
+    die "Nenhum dispositivo MuMu encontrado. Inicie o emulador ou use --port <PORTA>"
 }
 
-# ===== 2. Setup Frida =====
+# ===== 2. Configurar Frida =====
 setup_frida() {
-    log "Setting up Frida port forwarding ($FRIDA_LOCAL_PORT → $FRIDA_DEVICE_PORT)..."
+    # Garantir que o adbd esteja rodando como root no MuMu
+    local shell_uid
+    shell_uid=$("$ADB" -s "$DEVICE" shell "id -u" 2>/dev/null | tr -d '\r\n' || echo "")
+    if [[ "$shell_uid" != "0" ]]; then
+        log "Elevando adbd para root..."
+        "$ADB" -s "$DEVICE" root >/dev/null 2>&1 || true
+        sleep 2
+        "$ADB" connect "$DEVICE" >/dev/null 2>&1 || true
+    fi
+
+    log "Configurando redirecionamento de porta do Frida ($FRIDA_LOCAL_PORT → $FRIDA_DEVICE_PORT)..."
     "$ADB" -s "$DEVICE" forward "tcp:$FRIDA_LOCAL_PORT" "tcp:$FRIDA_DEVICE_PORT" 2>/dev/null || true
 
-    # Check frida-server (MuMu runs as root by default, no su needed)
+    # Verificar se o frida-server está rodando e se está como root
     local fs_pid
     fs_pid=$("$ADB" -s "$DEVICE" shell "pidof frida-server" 2>/dev/null | tr -d '\r\n' || echo "")
+    if [[ -n "$fs_pid" ]]; then
+        local fs_user
+        fs_user=$("$ADB" -s "$DEVICE" shell "ps -o USER= -p $fs_pid" 2>/dev/null | tr -d '\r\n ' || echo "")
+        if [[ -n "$fs_user" && "$fs_user" != "root" ]]; then
+            log "frida-server rodando como '$fs_user' (sem root); reiniciando como root..."
+            "$ADB" -s "$DEVICE" shell "kill -9 $fs_pid" >/dev/null 2>&1 || true
+            sleep 1
+            fs_pid=""
+        fi
+    fi
+
     if [[ -z "$fs_pid" ]]; then
-        log "Starting frida-server..."
-        "$ADB" -s "$DEVICE" shell "$FRIDA_SERVER_PATH -D &"
+        log "Iniciando frida-server como root..."
+        "$ADB" -s "$DEVICE" shell "chmod 755 $FRIDA_SERVER_PATH; $FRIDA_SERVER_PATH -D >/dev/null 2>&1 &"
         sleep 2
         fs_pid=$("$ADB" -s "$DEVICE" shell "pidof frida-server" 2>/dev/null | tr -d '\r\n' || echo "")
-        [[ -n "$fs_pid" ]] || die "Could not start frida-server at $FRIDA_SERVER_PATH"
+        [[ -n "$fs_pid" ]] || die "Não foi possível iniciar o frida-server em $FRIDA_SERVER_PATH"
     fi
-    ok "frida-server running (PID $fs_pid)"
+    ok "frida-server em execução como root (PID $fs_pid)"
 
-    # Check module.apk
+    # Verificar module.apk
     if ! "$ADB" -s "$DEVICE" shell "ls $MODULE_APK_DEVICE" >/dev/null 2>&1; then
-        die "module.apk not found at $MODULE_APK_DEVICE on device. Push it first:\n  \"\$ADB\" -s $DEVICE push module.apk $MODULE_APK_DEVICE"
+        die "module.apk não encontrado em $MODULE_APK_DEVICE no dispositivo. Envie-o primeiro:\n  \"\$ADB\" -s $DEVICE push module.apk $MODULE_APK_DEVICE"
     fi
-    ok "module.apk present"
+    ok "module.apk presente"
 }
 
-# ===== 3. Get Google One PID =====
+# ===== 3. Obter PID do Google One =====
 get_pid() {
-    # Force restart Google One for a clean Activity state
-    # All status messages go to stderr — only the PID goes to stdout
-    log "Restarting Google One for clean state..." >&2
+    # Forçar reinicialização do Google One para um estado limpo de Activity
+    # Todas as mensagens de status vão para stderr — apenas o PID vai para stdout
+    log "Reiniciando Google One para estado limpo..." >&2
     "$ADB" -s "$DEVICE" shell "am force-stop $GOOGLE_ONE_PKG" 2>/dev/null || true
     sleep 1
     "$ADB" -s "$DEVICE" shell "monkey -p $GOOGLE_ONE_PKG 1" >/dev/null 2>&1
     sleep 3
     local pid
     pid=$("$ADB" -s "$DEVICE" shell "pidof $GOOGLE_ONE_PKG" 2>/dev/null || echo "")
-    [[ -n "$pid" ]] || die "Could not start Google One"
-    # pidof may return multiple PIDs; take first
+    [[ -n "$pid" ]] || die "Não foi possível iniciar o Google One"
+    # pidof pode retornar múltiplos PIDs; pega o primeiro
     pid=$(echo "$pid" | tr -s ' ' '\n' | head -1 | tr -d '\r\n')
-    ok "Google One PID: $pid" >&2
+    ok "PID do Google One: $pid" >&2
     echo "$pid"
 }
 
-# ===== 4. Patch and run Frida script =====
+# ===== 4. Aplicar configurações e executar script Frida =====
 run_frida() {
     local pid="$1"
     local tmp_script
     tmp_script="/tmp/.frida-run-$$.js"
 
-    # Patch config into the script
+    # Aplicar configuração no script
     sed \
         -e "s|^var MODE = .*|var MODE = \"$MODE\";|" \
         -e "s|^var TARGET_PRODUCT = .*|var TARGET_PRODUCT = \"$TARGET\";|" \
@@ -198,18 +219,18 @@ run_frida() {
         -e "s|^var MODULE_APK = .*|var MODULE_APK = \"$MODULE_APK_DEVICE\";|" \
         "$FRIDA_SCRIPT" > "$tmp_script"
 
-    log "Injecting (mode=$MODE target=$TARGET duration=$DURATION)..."
+    log "Injetando (modo=$MODE alvo=$TARGET duração=$DURATION)..."
 
-    # Clear logcat BEFORE injection so we don't lose early output
+    # Limpar logcat ANTES da injeção para não perder saídas iniciais
     "$ADB" -s "$DEVICE" logcat -c 2>/dev/null || true
 
-    # Run frida in background (stdin from /dev/null to prevent REPL blocking)
-    frida -H "127.0.0.1:$FRIDA_LOCAL_PORT" -p "$pid" -l "$tmp_script" \
-        </dev/null >/dev/null 2>&1 &
+    # Executar frida em segundo plano mantendo stdin aberto para o REPL não encerrar imediatamente
+    tail -f /dev/null | frida -H "127.0.0.1:$FRIDA_LOCAL_PORT" -p "$pid" -l "$tmp_script" -q -t 120 \
+        >/dev/null 2>&1 &
     FRIDA_PID=$!
 
-    # Poll logcat in a loop instead of streaming pipe (avoids indefinite hang)
-    log "Waiting for results..."
+    # Consultar logcat em loop em vez de pipe contínuo (evita travamento indefinido)
+    log "Aguardando resultados..."
     local elapsed=0
     local max_wait=60
     local got_terminal=false
@@ -219,14 +240,14 @@ run_frida() {
         sleep 2
         elapsed=$((elapsed + 2))
 
-        # Read all AutoTrial messages so far
+        # Ler todas as mensagens do AutoTrial até o momento
         local output
         output=$("$ADB" -s "$DEVICE" logcat -d -s "AutoTrial:*" 2>/dev/null \
-            | sed 's/^.*AutoTrial *: *//')
+            | sed 's/^.*AutoTrial *: //')
 
         [[ -z "$output" ]] && continue
 
-        # Skip lines we already printed
+        # Pular linhas já impressas
         local total_lines
         total_lines=$(echo "$output" | wc -l)
         if [[ $total_lines -le $seen_lines ]]; then continue; fi
@@ -234,35 +255,35 @@ run_frida() {
         new_output=$(echo "$output" | tail -n +"$((seen_lines + 1))")
         seen_lines=$total_lines
 
-        # Process only new lines
+        # Processar apenas linhas novas
         while IFS= read -r msg; do
             case "$msg" in
-                "=== AUTO_TRIAL_START"*)  log "Script started" ;;
-                "BillingClient connected") ok "BillingClient connected" ;;
+                "=== AUTO_TRIAL_START"*)  log "Script iniciado" ;;
+                "BillingClient connected") ok "BillingClient conectado" ;;
                 "Products found:"*)       log "$msg" ;;
                 PRODUCT*)                 echo ""; echo "  $msg" ;;
                 "  ["*)                   echo "    $msg" ;;
                 "  TRIAL "*)              ok "$msg" ;;
                 TRIALS_FOUND*)            echo ""; log "$msg" ;;
                 SELECTED*)                ok "$msg" ;;
-                "Waiting for Activity"*)  log "Stabilizing Activity..." ;;
+                "Waiting for Activity"*)  log "Estabilizando Activity..." ;;
                 BILLING_FLOW_LAUNCHED*)
-                    ok "Billing dialog launched — confirm manually (Ctrl-C when done)"
+                    ok "Janela de pagamento aberta — confirme manualmente (Ctrl-C ao concluir)"
                     got_terminal=true ;;
                 "=== TRIAL_ACTIVATED ===")
-                    echo ""; ok "TRIAL ACTIVATED SUCCESSFULLY"
-                    echo ""; echo "  Auto-renews after trial. Cancel before expiry."
+                    echo ""; ok "AVALIAÇÃO ATIVADA COM SUCESSO"
+                    echo ""; echo "  Renova automaticamente após a avaliação. Cancele antes do vencimento."
                     echo ""; got_terminal=true ;;
                 "=== USER_CANCELLED ===")
-                    err "User cancelled"; got_terminal=true ;;
+                    err "Cancelado pelo usuário"; got_terminal=true ;;
                 "=== ITEM_ALREADY_OWNED ===")
-                    err "Already subscribed"; got_terminal=true ;;
+                    err "Já possui assinatura"; got_terminal=true ;;
                 "=== PURCHASE_FAILED"*)
                     err "$msg"; got_terminal=true ;;
                 "=== LIST_COMPLETE ===")
-                    echo ""; ok "Listing complete"; got_terminal=true ;;
+                    echo ""; ok "Listagem concluída"; got_terminal=true ;;
                 "=== NO_TRIALS ===")
-                    err "No trial offers found"; got_terminal=true ;;
+                    err "Nenhuma oferta de avaliação encontrada"; got_terminal=true ;;
                 "=== SELECT_FAILED ==="|\
                 "=== NO_ACTIVITY ==="|\
                 "=== CONNECT_FAILED"*|\
@@ -275,23 +296,23 @@ run_frida() {
     done
 
     if ! $got_terminal; then
-        err "Timed out after ${max_wait}s — check logcat manually: adb logcat -d -s AutoTrial:*"
+        err "Tempo esgotado após ${max_wait}s — verifique o logcat manualmente: adb logcat -d -s AutoTrial:*"
     fi
 
     rm -f "$tmp_script"
 }
 
-# ===== Cleanup =====
+# ===== Limpeza =====
 cleanup() {
     [[ -n "${FRIDA_PID:-}" ]] && kill "$FRIDA_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
-# ===== Main =====
+# ===== Principal =====
 main() {
     echo "=== Google AI Ultra Trial Tool ==="
-    echo "博客：https://blog.caowo.de/"
-    echo "发卡网：https://faka.cdkey.si/"
+    echo "Blog: https://blog.caowo.de/"
+    echo "Loja de chaves: https://faka.cdkey.si/"
     echo ""
 
     detect_device
@@ -299,7 +320,7 @@ main() {
     local pid
     pid=$(get_pid)
 
-    [[ ! -f "$FRIDA_SCRIPT" ]] && die "Frida script not found: $FRIDA_SCRIPT"
+    [[ ! -f "$FRIDA_SCRIPT" ]] && die "Script Frida não encontrado: $FRIDA_SCRIPT"
 
     echo ""
     run_frida "$pid"

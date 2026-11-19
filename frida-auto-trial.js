@@ -1,19 +1,19 @@
-// frida-auto-trial.js — Google AI Ultra trial: discover + activate
-// 博客：https://blog.caowo.de/
-// 发卡网：https://faka.cdkey.si/
+// frida-auto-trial.js — Avaliação Google AI Ultra: descobrir + ativar
+// Blog: https://blog.caowo.de/
+// Loja de chaves: https://faka.cdkey.si/
 //
-// Usage:
-//   frida -H 127.0.0.1:<PORT> -p <PID> -l frida-auto-trial.js
+// Uso:
+//   frida -H 127.0.0.1:<PORTA> -p <PID> -l frida-auto-trial.js
 //
-// Logcat tag: AutoTrial
-// Shell script auto-trial.sh patches the CONFIG lines below.
+// Tag do logcat: AutoTrial
+// O script shell auto-trial.sh altera as linhas de CONFIG abaixo.
 
-// ===== CONFIG (auto-trial.sh patches these) =====
+// ===== CONFIG (auto-trial.sh altera estas variáveis) =====
 var MODE = "activate";           // "list" | "activate"
 var TARGET_PRODUCT = "auto";     // "auto" | "g1.play.ai.pro" | "g1.play.20tb"
 var PREFER_DURATION = "longest"; // "longest" | "1mo" | "3mo" | "6mo" | "12mo"
 var MODULE_APK = "/data/local/tmp/module.apk";
-// ===== END CONFIG =====
+// ===== FIM CONFIG =====
 
 Java.perform(function() {
     var TAG = "AutoTrial";
@@ -27,7 +27,7 @@ Java.perform(function() {
 
     Log.i(TAG, "=== AUTO_TRIAL_START mode=" + MODE + " target=" + TARGET_PRODUCT + " prefer=" + PREFER_DURATION + " ===");
 
-    // --- Load BillingClient from module APK ---
+    // --- Carregar BillingClient a partir do APK de módulo ---
     var DexClassLoader = Java.use("dalvik.system.DexClassLoader");
     var dexLoader = DexClassLoader.$new(
         MODULE_APK,
@@ -54,8 +54,14 @@ Java.perform(function() {
     var DUR = { "P1M": 1, "P3M": 3, "P6M": 6, "P1Y": 12 };
     var ALIAS = { "1mo": "P1M", "3mo": "P3M", "6mo": "P6M", "12mo": "P1Y" };
 
-    // --- Purchase callback ---
-    var purchaseListener = Java.registerClass({
+    var GLOBAL_REFS = [];
+    function keepAlive(obj) {
+        GLOBAL_REFS.push(obj);
+        return obj;
+    }
+
+    // --- Retorno de chamada da compra ---
+    var PLClass = keepAlive(Java.registerClass({
         name: "com.frida.auto.PL",
         implements: [PurchasesUpdatedListener],
         methods: {
@@ -76,11 +82,19 @@ Java.perform(function() {
                 }
             }
         }
-    }).$new();
+    }));
+    var purchaseListener = keepAlive(PLClass.$new());
 
-    var bc = BillingClient.newBuilder(context).setListener(purchaseListener).enablePendingPurchases().build();
+    var builder = BillingClient.newBuilder(context).setListener(purchaseListener);
+    try {
+        var PendingPurchasesParams = Java.use("com.android.billingclient.api.PendingPurchasesParams");
+        builder = builder.enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build());
+    } catch (e) {
+        builder = builder.enablePendingPurchases();
+    }
+    var bc = keepAlive(builder.build());
 
-    var stateListener = Java.registerClass({
+    var SLClass = keepAlive(Java.registerClass({
         name: "com.frida.auto.SL",
         implements: [BillingClientStateListener],
         methods: {
@@ -96,18 +110,20 @@ Java.perform(function() {
                 Java.classFactory.loader = dexLoader;
 
                 var Runnable = Java.use("java.lang.Runnable");
-                var queryRunnable = Java.registerClass({
+                var QRClass = keepAlive(Java.registerClass({
                     name: "com.frida.auto.QR",
                     implements: [Runnable],
                     methods: { run: function() { doQuery(); } }
-                }).$new();
+                }));
+                var queryRunnable = keepAlive(QRClass.$new());
                 mainHandler.post(queryRunnable);
             },
             onBillingServiceDisconnected: function() {
-                Log.w(TAG, "BillingClient disconnected");
+                Log.w(TAG, "BillingClient desconectado");
             }
         }
-    }).$new();
+    }));
+    var stateListener = keepAlive(SLClass.$new());
 
     function doQuery() {
         var prodList = ArrayList.$new();
@@ -117,19 +133,33 @@ Java.perform(function() {
         }
         var params = QueryProductDetailsParams.newBuilder().setProductList(prodList).build();
 
-        var pdl = Java.registerClass({
+        var PDLClass = keepAlive(Java.registerClass({
             name: "com.frida.auto.PDL",
             implements: [ProductDetailsResponseListener],
-            methods: { onProductDetailsResponse: function(br, pdList) { onProducts(br, pdList); } }
-        }).$new();
+            methods: { onProductDetailsResponse: function(br, pdList) {
+                try {
+                    onProducts(br, pdList);
+                } catch (e) {
+                    Log.e(TAG, "=== LAUNCH_ERROR " + e + " ===");
+                }
+            } }
+        }));
+        var pdl = keepAlive(PDLClass.$new());
         bc.queryProductDetailsAsync(params, pdl);
     }
 
     function onProducts(br, pdList) {
-        var list = Java.cast(pdList, List);
+        var rawList = pdList;
+        try {
+            var QueryProductDetailsResult = Java.use("com.android.billingclient.api.QueryProductDetailsResult");
+            if (QueryProductDetailsResult.class.isInstance(pdList)) {
+                rawList = Java.cast(pdList, QueryProductDetailsResult).getProductDetailsList();
+            }
+        } catch (e) {}
+        var list = Java.cast(rawList, List);
         Log.i(TAG, "Products found: " + list.size());
 
-        // Collect every trial offer across all products
+        // Coletar todas as ofertas de avaliação em todos os produtos
         var trials = [];   // [{product, offerId, duration, months, pd, offer}]
 
         for (var i = 0; i < list.size(); i++) {
@@ -139,7 +169,7 @@ Java.perform(function() {
             Log.i(TAG, "PRODUCT " + pid + " — " + pd.getTitle());
 
             var offers = pd.getSubscriptionOfferDetails();
-            if (offers == null) { Log.i(TAG, "  (no offers)"); continue; }
+            if (offers == null) { Log.i(TAG, "  (sem ofertas)"); continue; }
             var ol = Java.cast(offers, List);
 
             for (var j = 0; j < ol.size(); j++) {
@@ -159,9 +189,9 @@ Java.perform(function() {
                     var micros = ph.getPriceAmountMicros();
                     var free = (micros == 0 || String(micros) === "0");
                     var period = String(ph.getBillingPeriod());
-                    Log.i(TAG, "  [" + j + "] Phase" + k + ": " + ph.getFormattedPrice()
-                        + " × " + period + " (" + ph.getBillingCycleCount() + " cycles)"
-                        + (free ? " ★FREE★" : "")
+                    Log.i(TAG, "  [" + j + "] Fase" + k + ": " + ph.getFormattedPrice()
+                        + " × " + period + " (" + ph.getBillingCycleCount() + " ciclos)"
+                        + (free ? " ★GRÁTIS★" : "")
                         + (k === 0 && oid != null ? " id=" + oid : "")
                         + (tagStr && k === 0 ? " tags=[" + tagStr + "]" : ""));
                     if (k === 0 && free && phases.size() > 1) {
@@ -178,12 +208,12 @@ Java.perform(function() {
             }
         }
 
-        // Summary
+        // Resumo
         Log.i(TAG, "");
         Log.i(TAG, "TRIALS_FOUND " + trials.length);
         for (var i = 0; i < trials.length; i++) {
             var t = trials[i];
-            Log.i(TAG, "  TRIAL " + t.product + " / " + t.offerId + " — " + t.months + " months free");
+            Log.i(TAG, "  TRIAL " + t.product + " / " + t.offerId + " — " + t.months + " meses grátis");
         }
 
         if (trials.length === 0 || MODE === "list") {
@@ -191,8 +221,8 @@ Java.perform(function() {
             return;
         }
 
-        // --- Select best trial ---
-        // Filter by target product
+        // --- Selecionar melhor avaliação ---
+        // Filtrar pelo produto alvo
         var candidates = [];
         for (var i = 0; i < trials.length; i++) {
             if (TARGET_PRODUCT === "auto" || trials[i].product === TARGET_PRODUCT) {
@@ -200,7 +230,7 @@ Java.perform(function() {
             }
         }
         if (candidates.length === 0) {
-            Log.e(TAG, "No trials for target=" + TARGET_PRODUCT);
+            Log.e(TAG, "Nenhuma avaliação para alvo=" + TARGET_PRODUCT);
             Log.i(TAG, "=== SELECT_FAILED ===");
             return;
         }
@@ -217,7 +247,7 @@ Java.perform(function() {
                 if (candidates[i].duration === wantPeriod) { selected = candidates[i]; break; }
             }
             if (!selected) {
-                Log.w(TAG, PREFER_DURATION + " not found, using longest");
+                Log.w(TAG, PREFER_DURATION + " não encontrado, usando a mais longa");
                 selected = candidates[0];
                 for (var i = 1; i < candidates.length; i++) {
                     if (candidates[i].months > selected.months) selected = candidates[i];
@@ -225,10 +255,10 @@ Java.perform(function() {
             }
         }
 
-        Log.i(TAG, "SELECTED " + selected.product + " / " + selected.offerId + " (" + selected.months + " months)");
+        Log.i(TAG, "SELECTED " + selected.product + " / " + selected.offerId + " (" + selected.months + " meses)");
         Log.i(TAG, "Waiting for Activity to stabilize...");
 
-        // --- Get Activity ---
+        // --- Obter Activity ---
         var act = null;
         try {
             Java.classFactory.loader = null;
@@ -245,13 +275,13 @@ Java.perform(function() {
             }
             Java.classFactory.loader = dexLoader;
         } catch(e) {
-            Log.e(TAG, "Activity error: " + e);
+            Log.e(TAG, "Erro na Activity: " + e);
             Java.classFactory.loader = dexLoader;
             return;
         }
         if (!act) { Log.e(TAG, "=== NO_ACTIVITY ==="); return; }
 
-        // --- Launch billing flow on UI thread ---
+        // --- Iniciar fluxo de cobrança na thread de UI ---
         var token = selected.offer.getOfferToken();
         var finalPd = selected.pd;
         var finalAct = act;
@@ -261,13 +291,13 @@ Java.perform(function() {
         var launchHandler = Handler.$new(Looper.getMainLooper());
         Java.classFactory.loader = dexLoader;
 
-        var LaunchRunnable = Java.registerClass({
+        var LRClass = keepAlive(Java.registerClass({
             name: "com.frida.auto.LR",
             implements: [Java.use("java.lang.Runnable")],
             methods: {
                 run: function() {
                     try {
-                        // Re-fetch Activity on UI thread to ensure it's current
+                        // Buscar a Activity novamente na thread de UI para garantir que seja a atual
                         var uiAct = finalAct;
                         try {
                             Java.classFactory.loader = null;
@@ -300,8 +330,9 @@ Java.perform(function() {
                     }
                 }
             }
-        }).$new();
-        // Delay 1.5s to let Activity fully render before launching billing overlay
+        }));
+        var LaunchRunnable = keepAlive(LRClass.$new());
+        // Aguardar 1,5s para permitir que a Activity renderize completamente antes de abrir a janela de cobrança
         launchHandler.postDelayed(LaunchRunnable, 1500);
     }
 

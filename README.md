@@ -1,123 +1,138 @@
 # Google AI Trial Tool
 
-内容为转载，来自q群797481450
-这次的会封号 ，涉及工具调用，慎用
+Conteúdo republicado, origem: grupo QQ 797481450
+Esta versão pode causar banimento de conta e envolve chamadas de ferramentas, use com cautela.
 
 
-通过 Frida 注入 Google One 进程调用 BillingClient API，发现并激活隐藏的 $0 免费试用。
+Injeta no processo do Google One via Frida para chamar a API `BillingClient`, descobrir e ativar avaliações gratuitas ocultas de $0.
 
-## 前提条件
+## Pré-requisitos
 
-| 组件 | 说明 |
+| Componente | Descrição |
 |---|---|
-| **MuMu 模拟器** | 已启动，已登录 Google 账号，已绑定付款方式 |
-| **adb** | 在 PATH 中，或设置 `ADB_PATH` 环境变量 |
-| **frida** (host) | `pip install frida-tools`，版本 ≥ 16 |
-| **frida-server** (device) | 推送到设备 `/data/local/tmp/frida-server` 并赋予执行权限 |
-| **module.apk** (device) | 包含 BillingClient 库的 APK，推送到 `/data/local/tmp/module.apk` |
-| **Google One** | 设备上已安装 (`com.google.android.apps.subscriptions.red`) |
+| **Emulador MuMu** | Iniciado, com conta Google conectada e forma de pagamento vinculada |
+| **adb** | No `PATH` ou configurado na variável de ambiente `ADB_PATH` |
+| **frida** (host) | `pip install frida-tools`, versão ≥ 16 |
+| **frida-server** (dispositivo) | Enviado para `/data/local/tmp/frida-server` no dispositivo e com permissão de execução |
+| **module.apk** (dispositivo) | APK contendo a biblioteca `BillingClient`, enviado para `/data/local/tmp/module.apk` |
+| **Google One** | Instalado no dispositivo (`com.google.android.apps.subscriptions.red`) |
 
-## 设备准备
+## Preparação do dispositivo
 
-```bash
-# 连接 MuMu
+> **Nota**: Como há mais de um emulador listado no `adb devices` (`127.0.0.1:16384` e `emulator-5554`), os comandos `adb` abaixo usam `-s 127.0.0.1:16384` para apontar diretamente para o MuMu e evitar o erro `more than one device/emulator`.
+
+```powershell
+# Conectar ao MuMu
 adb connect 127.0.0.1:16384
 
-# 推送 frida-server（从 https://github.com/frida/frida/releases 下载对应架构）
-adb push frida-server /data/local/tmp/frida-server
-adb shell "chmod 755 /data/local/tmp/frida-server"
+# Enviar o frida-server (a partir de C:\Users\Mateus\Downloads\frida)
+adb -s 127.0.0.1:16384 push "C:\Users\Mateus\Downloads\frida\frida-server" /data/local/tmp/frida-server
+adb -s 127.0.0.1:16384 shell "chmod 755 /data/local/tmp/frida-server"
 
-# 推送 module.apk（包含 com.android.billingclient 的 APK）
-adb push module.apk /data/local/tmp/module.apk
+# Enviar o module.apk (APK contendo com.android.billingclient)
+adb -s 127.0.0.1:16384 push "C:\Users\Mateus\Downloads\frida\module.apk" /data/local/tmp/module.apk
 ```
 
-## 用法
+## Uso
+
+### Windows (PowerShell)
+
+> Caso a execução de scripts esteja bloqueada no seu PowerShell, libere na sessão atual com:
+> `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+
+```powershell
+# Listar todas as avaliações disponíveis para a conta atual (apontando para a porta 16384)
+.\auto-trial.ps1 --port 16384 --list
+
+# Ativar avaliação gratuita de 3 meses do Pro (5TB, $19.99/mês)
+.\auto-trial.ps1 --port 16384 --product pro --dur 3mo
+
+# Ativar avaliação gratuita de 12 meses da variante Pro (5TB, $19.99/mês) ★Recomendado
+.\auto-trial.ps1 --port 16384 --product pro12 --dur 12mo
+
+# Ativar avaliação gratuita de 12 meses do Ultra 20x (30TB, $199.99/mês)
+.\auto-trial.ps1 --port 16384 --product 20x --dur 12mo
+
+# Ativar avaliação gratuita de 6 meses do Ultra 5x (20TB, $99.99/mês)
+.\auto-trial.ps1 --port 16384 --product 5x --dur 6mo
+
+# Selecionar automaticamente a avaliação mais longa (padrão: plano mais alto)
+.\auto-trial.ps1 --port 16384
+```
+
+### Linux / macOS (Bash)
 
 ```bash
-# 列出当前账号所有可用试用
+# Listar todas as avaliações disponíveis para a conta atual
 ./auto-trial.sh --list
 
-# 激活 Pro (5TB, $19.99/mo) 3个月免费试用
-./auto-trial.sh --product pro --dur 3mo
-
-# 激活 Pro variant (5TB, $19.99/mo) 12个月免费试用 ★推荐
+# Ativar avaliação gratuita de 12 meses da variante Pro (5TB, $19.99/mês) ★Recomendado
 ./auto-trial.sh --product pro12 --dur 12mo
-
-# 激活 Ultra 20x (30TB, $199.99/mo) 12个月免费试用
-./auto-trial.sh --product 20x --dur 12mo
-
-# 激活 Ultra 5x (20TB, $99.99/mo) 6个月免费试用
-./auto-trial.sh --product 5x --dur 6mo
-
-# 自动选最长试用（默认最高档）
-./auto-trial.sh
-
-# 指定 MuMu ADB 端口
-./auto-trial.sh --port 16416 --product pro --dur 3mo
 ```
 
-### 参数
+### Parâmetros
 
-| 参数 | 说明 | 默认值 |
+| Parâmetro | Descrição | Padrão |
 |---|---|---|
-| `--list` | 只列出试用，不激活 | (激活模式) |
-| `--product` | `pro` / `pro12` / `5x` / `20x` / `auto` / `g1.*` 完整 ID | `auto` |
+| `--list` | Apenas lista as avaliações, sem ativar | (modo de ativação) |
+| `--product` | `pro` / `pro12` / `5x` / `20x` / `auto` / ID completo `g1.*` | `auto` |
 | `--dur` | `1mo` / `3mo` / `6mo` / `12mo` / `longest` | `longest` |
-| `--port` | MuMu ADB 端口 | 自动扫描 |
-| `--adb` | adb 路径 | 自动检测 |
+| `--port` | Porta ADB do MuMu | Detecção automática |
+| `--adb` | Caminho do `adb` | Detecção automática |
 
-### 环境变量
+### Variáveis de ambiente
 
-| 变量 | 说明 |
+| Variável | Descrição |
 |---|---|
-| `ADB_PATH` | adb 可执行文件路径 |
-| `FRIDA_SCRIPT` | frida-auto-trial.js 路径（默认同目录） |
-| `FRIDA_SERVER_PATH` | 设备上 frida-server 路径（默认 `/data/local/tmp/frida-server`） |
-| `MODULE_APK_DEVICE` | 设备上 module.apk 路径（默认 `/data/local/tmp/module.apk`） |
+| `ADB_PATH` | Caminho do executável `adb` |
+| `FRIDA_SCRIPT` | Caminho do `frida-auto-trial.js` (padrão: mesmo diretório) |
+| `FRIDA_SERVER_PATH` | Caminho do `frida-server` no dispositivo (padrão: `/data/local/tmp/frida-server`) |
+| `MODULE_APK_DEVICE` | Caminho do `module.apk` no dispositivo (padrão: `/data/local/tmp/module.apk`) |
 
-## 产品 ID 对照
+## Tabela de IDs de produtos
 
-| 别名 | 产品 ID | 容量 | 月费 | 试用 |
+| Apelido | ID do Produto | Armazenamento | Mensalidade | Avaliação |
 |---|---|---|---|---|
-| **pro12** ★ | `g1.2tb.ai.subs_variant` | 5TB | $19.99 | 6/12 月 |
-| **pro** | `g1.play.2tb.ai` | 5TB | $19.99 | 3 月 |
-| **5x** | `g1.play.20tb` | 20TB | $99.99 | 1/3/6/12 月 |
-| **20x** | `g1.play.ai.pro` | 30TB | $199.99 | 1/3/6/12 月 |
-| — | `g1.2tb.ai` | 5TB | $19.99 | 无 |
-| — | `g1.ai.pro` | 30TB | $199.99 | 无 |
-| — | `g1.30tb` | 30TB | $149.99 | 无 |
+| **pro12** ★ | `g1.2tb.ai.subs_variant` | 5TB | $19.99 | 6/12 meses |
+| **pro** | `g1.play.2tb.ai` | 5TB | $19.99 | 3 meses |
+| **5x** | `g1.play.20tb` | 20TB | $99.99 | 1/3/6/12 meses |
+| **20x** | `g1.play.ai.pro` | 30TB | $199.99 | 1/3/6/12 meses |
+| — | `g1.2tb.ai` | 5TB | $19.99 | Nenhuma |
+| — | `g1.ai.pro` | 30TB | $199.99 | Nenhuma |
+| — | `g1.30tb` | 30TB | $149.99 | Nenhuma |
 
-App 界面"升级"按钮走的是不带试用的 ID（`g1.2tb.ai` 等）。
+O botão "Fazer upgrade" na interface do app usa os IDs sem avaliação (`g1.2tb.ai`, etc.).
 
-> **注意**：截至 2026-11-19，Ultra 5x/20x 的试用已封车（offer 被移除）。Pro 有两个产品 ID：
-> - `g1.2tb.ai.subs_variant`（别名 `pro12`）：最长 **12 个月**免费，推荐优先使用
-> - `g1.play.2tb.ai`（别名 `pro`）：3 个月免费
+> **Atenção**: Até 2026-11-19, as avaliações do Ultra 5x/20x foram encerradas (as ofertas foram removidas). O Pro possui dois IDs de produto:
+> - `g1.2tb.ai.subs_variant` (apelido `pro12`): até **12 meses** grátis, recomendado usar como prioridade
+> - `g1.play.2tb.ai` (apelido `pro`): 3 meses grátis
 >
-> 注意：Frida ≥ 17 有破坏性变更（Java 桥在 17 里要显式加载），建议使用 Frida **16.7.19**。
+> Nota: O Frida ≥ 17 possui mudanças incompatíveis (a ponte Java no 17 precisa ser carregada explicitamente); recomenda-se usar o Frida **16.7.19**.
 
-## 纯网页方法——不可行
+## Métodos apenas via Web — inviáveis
 
-经测试，以下网页端方案均无法绕过 Google Play 的服务端校验：
+Após testes, nenhuma das abordagens via Web abaixo consegue contornar a validação no servidor do Google Play:
 
-1. **静态 URL**：`rpctoken`、`_gfid` 和 payments blob 是会话绑定的，过期即失效
-2. **Console 脚本改 ear 参数**：页面生成的 ear（25 位）在 `ear[13]` 放产品、`ear[24]` 放完整性签名。签名绑定了原产品，换产品后无论保留还是清除签名，服务端都返回 400
-3. **Chrome 扩展 RPC Hook**：社区方案在 `Ngbm` RPC payload 层面拦截，但相关仓库已 404
+1. **URL estática**: `rpctoken`, `_gfid` e o blob de pagamentos são vinculados à sessão e expiram imediatamente
+2. **Script no Console alterando o parâmetro `ear`**: O `ear` gerado pela página (25 posições) coloca o produto em `ear[13]` e a assinatura de integridade em `ear[24]`. A assinatura é vinculada ao produto original; ao trocar o produto, mantendo ou removendo a assinatura, o servidor retorna 400
+3. **Extensão do Chrome com RPC Hook**: A solução da comunidade interceptava no nível do payload RPC `Ngbm`, mas o repositório correspondente já retornou 404
 
-> **结论**：隐藏试用（`g1.play.2tb.ai`）不在任何页面上展示，网页端无法生成对应的合法 checkout session。唯一可靠方法是通过 Frida 注入 BillingClient API 在设备端发起。
+> **Conclusão**: A avaliação oculta (`g1.play.2tb.ai`) não é exibida em nenhuma página, e a versão Web não consegue gerar uma sessão de checkout válida correspondente. O único método confiável é iniciar pelo dispositivo injetando a API `BillingClient` via Frida.
 
-## 注意事项
+## Observações importantes
 
-- 脚本只拉起 Google Play 支付弹窗，需要手动确认（输入密码）
-- 试用到期后自动续费，记得提前取消
-- 账号必须已绑付款方式且无现有订阅，否则试用不可用
-- `launchBillingFlow` 返回 code=0 可能消耗试用资格，即使弹窗未显示
-- 全程在模拟器中操作，建议绑定小额余额卡作为安全网
+- O script apenas abre a janela de pagamento do Google Play; é necessário confirmar manualmente (digitando a senha)
+- A assinatura é renovada automaticamente após o término da avaliação; lembre-se de cancelar antes
+- A conta deve ter uma forma de pagamento vinculada e não possuir assinatura ativa; caso contrário, a avaliação não ficará disponível
+- `launchBillingFlow` retornando `code=0` pode consumir a elegibilidade da avaliação mesmo que a janela não apareça
+- Faça todo o processo no emulador e recomenda-se vincular um cartão com saldo baixo como margem de segurança
 
-## 文件说明
+## Descrição dos arquivos
 
-- `auto-trial.sh` — Shell 启动器，自动检测设备、管理 frida-server、注入脚本、监控结果
-- `frida-auto-trial.js` — Frida 注入脚本，通过 DexClassLoader 加载 BillingClient 查询和激活试用
+- `auto-trial.ps1` — Inicializador em PowerShell (Windows); detecta o dispositivo automaticamente, gerencia o `frida-server`, injeta o script e monitora o resultado
+- `auto-trial.sh` — Inicializador em Shell (Linux/macOS); detecta o dispositivo automaticamente, gerencia o `frida-server`, injeta o script e monitora o resultado
+- `frida-auto-trial.js` — Script de injeção Frida; carrega o `BillingClient` via `DexClassLoader` para consultar e ativar avaliações
 
 
 
-羊毛交流群 t.me/muihbb
+Grupo de compartilhamento: t.me/muihbb
