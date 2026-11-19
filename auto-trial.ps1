@@ -225,6 +225,33 @@ function Find-Frida {
     return $null
 }
 
+function Test-FridaVersion($fridaBin) {
+    $cliVer = try { (& $fridaBin --version 2>$null) -join "" } catch { "" }
+    $cliVer = $cliVer.Trim()
+    if (-not $cliVer) { return }
+
+    Write-Log "Frida CLI local detectado: v$cliVer ($fridaBin)"
+
+    if ($cliVer -match '^(\d+)\.') {
+        $majorCli = [int]$Matches[1]
+        if ($majorCli -ne 16) {
+            Write-Host ""
+            Write-Err "=========================================================================="
+            Write-Err "VERSÃO INCOMPATÍVEL DO FRIDA DETECTADA: v$cliVer"
+            Write-Err "O frida-server incluído no projeto é a versão 16.7.19."
+            Write-Err "O Frida exige que a versão principal (major) seja IDÊNTICA (16.x com 16.x)."
+            Write-Err "Com Frida 17.x no PC, ocorre o erro:"
+            Write-Err "'Failed to attach: unable to communicate with remote frida-server'."
+            Write-Err "=========================================================================="
+            Write-Host ""
+            Write-Host ">>> COMO RESOLVER AGORA (execute no PowerShell / CMD):" -ForegroundColor Yellow
+            Write-Host '    pip install "frida==16.7.19" "frida-tools<14.0.0" --force-reinstall' -ForegroundColor Green
+            Write-Host ""
+            Stop-WithError "Versão incompatível do Frida CLI. Reinstale a v16.7.19 com o comando acima e tente novamente."
+        }
+    }
+}
+
 # ===== 2. Configurar Frida =====
 function Initialize-Frida {
     # Garantir que o adbd esteja rodando como root no MuMu
@@ -239,9 +266,33 @@ function Initialize-Frida {
     Write-Log "Configurando redirecionamento de porta do Frida ($FRIDA_LOCAL_PORT → $FRIDA_DEVICE_PORT)..."
     try { & $ADB -s $script:DEVICE forward "tcp:$FRIDA_LOCAL_PORT" "tcp:$FRIDA_DEVICE_PORT" 2>$null | Out-Null } catch {}
 
+    # Verificar arquitetura do dispositivo
+    $abi = try { (& $ADB -s $script:DEVICE shell "getprop ro.product.cpu.abi" 2>$null) -join "" } catch { "" }
+    $abi = $abi.Trim()
+    if ($abi) {
+        Write-Log "Arquitetura (ABI) do dispositivo: $abi"
+        if ($abi -notmatch "x86_64") {
+            Write-Host "[!] AVISO: A ABI do seu emulador é '$abi' (o frida-server padrão incluído é x86_64)." -ForegroundColor Yellow
+            Write-Host "    Se o frida-server não iniciar, baixe o binário para '$abi' (v16.7.19) em:" -ForegroundColor Yellow
+            Write-Host "    https://github.com/frida/frida/releases/tag/16.7.19" -ForegroundColor Cyan
+        }
+    }
+
     # Verificar se o frida-server está rodando e se está como root
     $fs_pid = try { (& $ADB -s $script:DEVICE shell "pidof frida-server" 2>$null) -join "" } catch { "" }
     $fs_pid = $fs_pid.Trim()
+
+    if ($fs_pid) {
+        # Verificar versão do frida-server atualmente em execução
+        $fs_ver = try { (& $ADB -s $script:DEVICE shell "$FRIDA_SERVER_PATH --version" 2>$null) -join "" } catch { "" }
+        $fs_ver = $fs_ver.Trim()
+        if ($fs_ver -and $fs_ver -notmatch '^16\.') {
+            Write-Log "frida-server ativo é v$fs_ver (diferente de 16.x); reiniciando com versão compatível 16.7.19..."
+            try { & $ADB -s $script:DEVICE shell "kill -9 $fs_pid" 2>$null | Out-Null } catch {}
+            Start-Sleep -Seconds 1
+            $fs_pid = ""
+        }
+    }
 
     if ($fs_pid) {
         $fs_user = try { (& $ADB -s $script:DEVICE shell "ps -o USER= -p $fs_pid" 2>$null) -join "" } catch { "" }
@@ -341,6 +392,7 @@ function Invoke-Frida($g1_pid) {
         if (-not $fridaBin) {
             Stop-WithError "frida CLI não encontrado. Instale com: pip install frida==16.7.19 `"frida-tools<14.0.0`""
         }
+        Test-FridaVersion $fridaBin
 
         # Executar frida em segundo plano mantendo stdin aberto para o REPL não encerrar imediatamente
         $psi = New-Object System.Diagnostics.ProcessStartInfo

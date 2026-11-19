@@ -257,6 +257,13 @@ adb push module.apk /data/local/tmp/module.apk
    - The account currently has an active Google One subscription.
 5. **`frida CLI not found`**
    - Install via: `pip install "frida==16.7.19" "frida-tools<14.0.0"`
+6. **`Failed to attach: unable to communicate with remote frida-server; please ensure that major versions match`**
+   - **Cause**: Your PC has Frida 17 installed (which is what `pip install frida` installs by default), while the emulator is running `frida-server` 16.7.19. Major versions must match.
+   - **Fix**: Reinstall Frida 16.7.19 on your PC with:
+     ```powershell
+     pip install "frida==16.7.19" "frida-tools<14.0.0" --force-reinstall
+     ```
+     Verify with `frida --version` (should show `16.7.19`). Then kill any lingering frida-server process on the emulator with `adb shell "pkill -9 frida-server"` and run the script again.
 
 ---
 
@@ -517,3 +524,10 @@ adb push module.apk /data/local/tmp/module.apk
    - A conta Google conectada já possui uma assinatura do Google One em vigor.
 5. **`frida CLI não encontrado`**
    - Instale via: `pip install "frida==16.7.19" "frida-tools<14.0.0"`
+6. **`Failed to attach: unable to communicate with remote frida-server; please ensure that major versions match`**
+   - **Causa**: O seu computador está com o Frida 17 instalado (versão padrão instalada pelo `pip install frida`), enquanto o emulador está executando o `frida-server` 16.7.19. O Frida exige que a versão principal (major) seja idêntica entre o cliente e o servidor.
+   - **Solução**: Force a reinstalação da versão 16.7.19 no seu computador rodando no PowerShell / CMD:
+     ```powershell
+     pip install "frida==16.7.19" "frida-tools<14.0.0" --force-reinstall
+     ```
+     Verifique com `frida --version` (deve exibir `16.7.19`). Depois, encerre qualquer processo antigo preso no emulador com `adb shell "pkill -9 frida-server"` e execute o script novamente.
