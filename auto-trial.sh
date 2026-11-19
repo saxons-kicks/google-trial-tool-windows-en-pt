@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# auto-trial.sh — Ativação em um comando da avaliação gratuita Google AI Ultra
-# Blog: https://blog.caowo.de/
-# Loja de chaves: https://faka.cdkey.si/
+# auto-trial.sh — Ativação automatizada de avaliações gratuitas do Google One / Gemini Advanced
 #
 # Uso:
 #   ./auto-trial.sh --list                        # exibe todas as avaliações disponíveis
@@ -172,6 +170,19 @@ setup_frida() {
     fi
 
     if [[ -z "$fs_pid" ]]; then
+        # Se frida-server não existir no dispositivo, envia automaticamente se presente na pasta local
+        if ! "$ADB" -s "$DEVICE" shell "test -f $FRIDA_SERVER_PATH" 2>/dev/null; then
+            if [[ ! -f "$SCRIPT_DIR/frida-server" && -f "$SCRIPT_DIR/frida-server.zip" ]]; then
+                log "Extraindo frida-server.zip..."
+                unzip -o "$SCRIPT_DIR/frida-server.zip" -d "$SCRIPT_DIR" >/dev/null 2>&1 || true
+            fi
+            if [[ -f "$SCRIPT_DIR/frida-server" ]]; then
+                log "frida-server não encontrado no dispositivo. Enviando $SCRIPT_DIR/frida-server para $FRIDA_SERVER_PATH..."
+                "$ADB" -s "$DEVICE" push "$SCRIPT_DIR/frida-server" "$FRIDA_SERVER_PATH" >/dev/null 2>&1 || true
+                "$ADB" -s "$DEVICE" shell "chmod 755 $FRIDA_SERVER_PATH" >/dev/null 2>&1 || true
+            fi
+        fi
+
         log "Iniciando frida-server como root..."
         "$ADB" -s "$DEVICE" shell "chmod 755 $FRIDA_SERVER_PATH; $FRIDA_SERVER_PATH -D >/dev/null 2>&1 &"
         sleep 2
@@ -180,7 +191,14 @@ setup_frida() {
     fi
     ok "frida-server em execução como root (PID $fs_pid)"
 
-    # Verificar module.apk
+    # Verificar module.apk (envia automaticamente se presente na pasta local)
+    if ! "$ADB" -s "$DEVICE" shell "test -f $MODULE_APK_DEVICE" 2>/dev/null; then
+        if [[ -f "$SCRIPT_DIR/module.apk" ]]; then
+            log "module.apk não encontrado no dispositivo. Enviando $SCRIPT_DIR/module.apk para $MODULE_APK_DEVICE..."
+            "$ADB" -s "$DEVICE" push "$SCRIPT_DIR/module.apk" "$MODULE_APK_DEVICE" >/dev/null 2>&1 || true
+        fi
+    fi
+
     if ! "$ADB" -s "$DEVICE" shell "ls $MODULE_APK_DEVICE" >/dev/null 2>&1; then
         die "module.apk não encontrado em $MODULE_APK_DEVICE no dispositivo. Envie-o primeiro:\n  \"\$ADB\" -s $DEVICE push module.apk $MODULE_APK_DEVICE"
     fi

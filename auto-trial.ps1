@@ -1,6 +1,4 @@
-﻿# auto-trial.ps1 — Ativação em um comando da avaliação gratuita Google AI Ultra
-# Blog: https://blog.caowo.de/
-# Loja de chaves: https://faka.cdkey.si/
+﻿# auto-trial.ps1 — Ativação automatizada de avaliações gratuitas do Google One / Gemini Advanced
 #
 # Uso:
 #   .\auto-trial.ps1 --list                        # exibe todas as avaliações disponíveis
@@ -256,6 +254,22 @@ function Initialize-Frida {
     }
 
     if (-not $fs_pid) {
+        # Se frida-server não existir no dispositivo, envia automaticamente se presente na pasta local
+        $fs_exists = try { (& $ADB -s $script:DEVICE shell "test -f $FRIDA_SERVER_PATH && echo 1" 2>$null) -join "" } catch { "" }
+        if ($fs_exists.Trim() -ne "1") {
+            $local_fs = Join-Path $SCRIPT_DIR "frida-server"
+            $local_zip = Join-Path $SCRIPT_DIR "frida-server.zip"
+            if (-not (Test-Path -LiteralPath $local_fs -PathType Leaf) -and (Test-Path -LiteralPath $local_zip -PathType Leaf)) {
+                Write-Log "Extraindo frida-server.zip..."
+                try { Expand-Archive -Path $local_zip -DestinationPath $SCRIPT_DIR -Force } catch {}
+            }
+            if (Test-Path -LiteralPath $local_fs -PathType Leaf) {
+                Write-Log "frida-server não encontrado no dispositivo. Enviando $local_fs para $FRIDA_SERVER_PATH..."
+                try { & $ADB -s $script:DEVICE push $local_fs $FRIDA_SERVER_PATH *>$null } catch {}
+                try { & $ADB -s $script:DEVICE shell "chmod 755 $FRIDA_SERVER_PATH" *>$null } catch {}
+            }
+        }
+
         Write-Log "Iniciando frida-server como root..."
         try { & $ADB -s $script:DEVICE shell "chmod 755 $FRIDA_SERVER_PATH; $FRIDA_SERVER_PATH -D >/dev/null 2>&1 &" 2>$null | Out-Null } catch {}
         Start-Sleep -Seconds 2
@@ -267,7 +281,16 @@ function Initialize-Frida {
     }
     Write-Ok "frida-server em execução como root (PID $fs_pid)"
 
-    # Verificar module.apk
+    # Verificar module.apk (envia automaticamente se presente na pasta local)
+    $mod_exists = try { (& $ADB -s $script:DEVICE shell "test -f $MODULE_APK_DEVICE && echo 1" 2>$null) -join "" } catch { "" }
+    if ($mod_exists.Trim() -ne "1") {
+        $local_mod = Join-Path $SCRIPT_DIR "module.apk"
+        if (Test-Path -LiteralPath $local_mod -PathType Leaf) {
+            Write-Log "module.apk não encontrado no dispositivo. Enviando $local_mod para $MODULE_APK_DEVICE..."
+            try { & $ADB -s $script:DEVICE push $local_mod $MODULE_APK_DEVICE *>$null } catch {}
+        }
+    }
+
     try { & $ADB -s $script:DEVICE shell "ls $MODULE_APK_DEVICE" *>$null } catch {}
     if ($LASTEXITCODE -ne 0) {
         Stop-WithError "module.apk não encontrado em $MODULE_APK_DEVICE no dispositivo. Envie-o primeiro:`n  adb -s $script:DEVICE push module.apk $MODULE_APK_DEVICE"
@@ -432,9 +455,7 @@ function Invoke-Frida($g1_pid) {
 }
 
 # ===== Principal =====
-Write-Host "=== Google AI Ultra Trial Tool ==="
-Write-Host "Blog: https://blog.caowo.de/"
-Write-Host "Loja de chaves: https://faka.cdkey.si/"
+Write-Host "=== Google AI Trial Tool ==="
 Write-Host ""
 
 if (-not (Test-Path -LiteralPath $FRIDA_SCRIPT -PathType Leaf)) {

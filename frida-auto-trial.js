@@ -1,6 +1,4 @@
-// frida-auto-trial.js — Avaliação Google AI Ultra: descobrir + ativar
-// Blog: https://blog.caowo.de/
-// Loja de chaves: https://faka.cdkey.si/
+// frida-auto-trial.js — Avaliação Google One / AI: consultar e ativar via BillingClient
 //
 // Uso:
 //   frida -H 127.0.0.1:<PORTA> -p <PID> -l frida-auto-trial.js
